@@ -1,0 +1,11 @@
+simv
+simv.daidir/
+csrc/
+*.vcd
+*.vpd
+*.log
+*.key
+vc_hdrs.h
+result.zip
+work/
+
