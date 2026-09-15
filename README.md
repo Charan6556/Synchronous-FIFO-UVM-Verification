@@ -30,7 +30,7 @@ sequence -> sequencer -> driver -> interface -> FIFO DUT
 scoreboard <- analysis port <- monitor <-------+
 ```
 
-The driver applies requests on the falling clock edge. The DUT accepts them on the following rising edge. The monitor captures the request and the pre-edge `full`/`empty` state, waits one simulation step for registered read data to settle, and publishes the transaction to the scoreboard.
+The driver applies requests on the falling clock edge. The DUT accepts them on the following rising edge. The monitor waits one simulation step for registered read data and status outputs to settle, then publishes the observed transaction to the scoreboard.
 
 ## Verification scenarios
 
@@ -43,13 +43,15 @@ The default `fifo_test` runs these sequences in order:
 
 ## Scoreboard
 
-The scoreboard uses a SystemVerilog queue as an independent FIFO reference model:
+The scoreboard uses a SystemVerilog queue as an independent FIFO reference model. It saves `pre_size` before processing each monitored cycle and determines accepted operations only from that model state:
 
-- An accepted write calls `push_back(data_in)`.
-- An accepted read calls `pop_front()`.
-- The expected value is compared with the DUT's `data_out` and reported through UVM.
+- A write is accepted when `wr_en` is asserted and `pre_size < DEPTH`.
+- A read is accepted when `rd_en` is asserted and `pre_size > 0`.
+- Accepted writes call `push_back(data_in)`.
+- Accepted reads call `pop_front()` and compare the expected value with `data_out` using four-state equality.
+- After modeling both operations, DUT `full` and `empty` are compared with the predicted queue occupancy.
 
-This checks both stored data and FIFO ordering. The scoreboard deliberately ignores blocked writes while full and blocked reads while empty.
+The reference model never trusts DUT `full` or `empty` to decide what happened. This prevents a faulty status flag from masking its own bug and correctly checks the boundary write that makes the FIFO full and the boundary read that makes it empty. The scoreboard report summarizes accepted operations and remaining model entries; the directed regression is expected to finish with `writes=16 reads=16 leftover=0`.
 
 ## Assertions
 
@@ -96,13 +98,13 @@ On EDA Playground, add `design.sv` as the design and the remaining files as test
 
 ## Captured results
 
-The supplied run demonstrates the UVM hierarchy, queue comparisons, FIFO fill/drain waveform, and a clean UVM report summary.
+The supplied run demonstrates the UVM hierarchy, independent queue comparisons, FIFO fill/drain boundary behavior, and a clean UVM report summary.
 
 ### Fill and drain waveform
 
 ![FIFO fill and drain waveform](results/fill-drain-waveform.png)
 
-The waveform shows reset, occupancy increasing to 16, `full` assertion, occupancy returning to zero, and `empty` assertion.
+The waveform shows reset, all 16 accepted writes, `full` assertion on the boundary cycle, all 16 accepted reads, and `empty` assertion on the final read boundary.
 
 ### Queue-based comparisons
 
@@ -116,7 +118,7 @@ The waveform shows reset, occupancy increasing to 16, `full` assertion, occupanc
 
 ![UVM report summary](results/uvm-report-summary.png)
 
-The captured UVM report contains zero `UVM_WARNING`, `UVM_ERROR`, and `UVM_FATAL` messages. This is a UVM report summary; it is not a separate assertion-coverage report.
+The captured fill/drain run completes with 16 accepted writes, 16 accepted reads, and no leftover reference entries. Its UVM report contains zero `UVM_WARNING`, `UVM_ERROR`, and `UVM_FATAL` messages. This is a UVM report summary; it is not a separate assertion-coverage report.
 
 ## Scope
 
